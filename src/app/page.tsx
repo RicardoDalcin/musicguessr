@@ -1,16 +1,14 @@
-"use client";
-import Image from "next/image";
-import { useCallback, useEffect, useState } from "react";
-
-import { Playlist } from "@/types";
-import classNames from "classnames";
+'use client';
+import { useCallback, useEffect, useState } from 'react';
+import { Playlist } from '@/types';
+import classNames from 'classnames';
 
 interface TriviaQuestion {
   id: string;
   song: string;
   artist: string;
   preview: string;
-  guessType: "artist" | "song";
+  guessType: 'artist' | 'song';
   rightAnswerId: string;
   options: {
     id: string;
@@ -20,7 +18,7 @@ interface TriviaQuestion {
 
 export default function Home() {
   const [playlistURL, setplaylistURL] = useState(
-    "https://open.spotify.com/playlist/4TRhJ30Nq7x9AfoTyFruig?si=502b48c5c7194dd4"
+    'https://open.spotify.com/playlist/4TRhJ30Nq7x9AfoTyFruig?si=502b48c5c7194dd4'
   );
 
   const [playlistResult, setPlaylistResult] = useState<Playlist | null>(null);
@@ -34,82 +32,38 @@ export default function Home() {
     }[]
   >([]);
 
-  const authenticate = useCallback(async () => {
-    const token = localStorage.getItem("spotify_access_token");
-
-    if (token) {
-      const { accessToken, expiresAt } = JSON.parse(token);
-
-      if (Date.now() < expiresAt) {
-        return accessToken;
-      }
-    }
-
-    const response = await fetch("https://accounts.spotify.com/api/token", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        grant_type: "client_credentials",
-        client_id: process.env.SPOTIFY_CLIENT_ID ?? "",
-        client_secret: process.env.SPOTIFY_CLIENT_SECRET ?? "",
-      }),
-    });
-
-    const access: {
-      access_token: string;
-      token_type: string;
-      expires_in: number;
-    } = await response.json();
-
-    localStorage.setItem(
-      "spotify_access_token",
-      JSON.stringify({
-        accessToken: access.access_token,
-        expiresAt: Date.now() + access.expires_in * 1000,
-      })
-    );
-
-    return access.access_token;
-  }, []);
-
   const loadPlaylist = useCallback(async () => {
     setIsLoading(true);
     setError(null);
 
-    const token = await authenticate();
-
     const isSpotifyUrl = new RegExp(
-      "^(https://open.spotify.com(/intl-.+)?/playlist/).+"
+      '^(https://open.spotify.com(/intl-.+)?/playlist/).+'
     ).test(playlistURL);
 
     const playlistId =
-      playlistURL.split("playlist/").pop()?.split("?")[0] ?? "";
+      playlistURL.split('playlist/').pop()?.split('?')[0] ?? '';
 
     if (!isSpotifyUrl || !playlistId) {
       setError(
-        "A URL inserida não é válida. Por favor, insira uma URL válida."
+        'A URL inserida não é válida. Por favor, insira uma URL válida.'
       );
       setIsLoading(false);
       return;
     }
 
     const response = await fetch(
-      new URL(`https://api.spotify.com/v1/playlists/${playlistId}`).toString(),
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
+      new URL(
+        `api/spotify/playlists/${playlistId}`,
+        window.location.href
+      ).toString()
     );
-    const data = (await response.json()) as Playlist;
+    const data = (await response.json()).data as Playlist;
 
     console.log(data);
     setPlaylistResult(data);
     setTrivia(getSongs(data));
     setIsLoading(false);
-  }, [playlistURL, authenticate]);
+  }, [playlistURL]);
 
   useEffect(() => {
     loadPlaylist();
@@ -142,8 +96,8 @@ export default function Home() {
         id: questionId,
         song: song.name,
         artist: song.artists[0].name,
-        preview: song.preview_url ?? "",
-        guessType: isArtist ? "artist" : ("song" as "artist" | "song"),
+        preview: song.preview_url ?? '',
+        guessType: isArtist ? 'artist' : ('song' as 'artist' | 'song'),
         rightAnswerId,
         options: [
           ...options.map((option) => ({
@@ -188,15 +142,15 @@ export default function Home() {
 
     if (guess) {
       if (question.rightAnswerId === optionId) {
-        return "bg-green-500 hover:bg-green-600";
+        return 'bg-green-500 hover:bg-green-600';
       }
 
       if (guess.answerId === optionId) {
-        return "bg-red-500 hover:bg-red-600";
+        return 'bg-red-500 hover:bg-red-600';
       }
     }
 
-    return "bg-gray-300 hover:bg-gray-400";
+    return 'bg-gray-300 hover:bg-gray-400';
   }
 
   return (
@@ -218,7 +172,7 @@ export default function Home() {
           className="bg-green-500 w-full py-1 disabled:bg-gray-400 text-white rounded transition-colors duration-200 ease-in-out hover:bg-green-600"
           onClick={loadPlaylist}
         >
-          {isLoading ? "Loading..." : "Send"}
+          {isLoading ? 'Loading...' : 'Send'}
         </button>
 
         {playlistResult && (
@@ -247,8 +201,8 @@ export default function Home() {
                 className="flex flex-col items-center gap-4 p-4 border border-gray-300 rounded"
               >
                 <h2 className="text-lg font-bold">
-                  {index + 1}.{" "}
-                  {hasGuessed(question.id) ? question.song : "??????"}
+                  {index + 1}.{' '}
+                  {hasGuessed(question.id) ? question.song : '??????'}
                 </h2>
                 <audio controls src={question.preview} />
                 <div className="flex flex-col items-center gap-4">
@@ -259,7 +213,7 @@ export default function Home() {
                       onClick={() => handleGuess(question.id, option.id)}
                       disabled={hasGuessed(question.id)}
                       className={classNames(
-                        "w-full py-1 text-white rounded transition-colors duration-200 ease-in-out",
+                        'w-full py-1 text-white rounded transition-colors duration-200 ease-in-out',
                         getGuessColor(question, option.id)
                       )}
                     >
@@ -275,4 +229,3 @@ export default function Home() {
     </main>
   );
 }
-
