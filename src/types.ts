@@ -1,3 +1,9 @@
+export interface Player {
+  id: string;
+  name: string;
+  isHost: boolean;
+}
+
 export interface Album {
   album_type: string;
   images: {
@@ -49,6 +55,19 @@ interface TrackObject {
   track_number: number;
   type: string;
   uri: string;
+}
+
+export interface TriviaQuestion {
+  id: string;
+  song: string;
+  artist: string;
+  preview: string;
+  guessType: 'artist' | 'song';
+  rightAnswerId: string;
+  options: {
+    id: string;
+    name: string;
+  }[];
 }
 
 export interface Playlist {
