@@ -1,7 +1,7 @@
 import express from 'express';
 import next from 'next';
 import http from 'http';
-import { Server } from 'socket.io';
+import { Server, Socket } from 'socket.io';
 import { Player, Playlist, TriviaQuestion } from '@/types';
 
 const dev = process.env.NODE_ENV !== 'production';
