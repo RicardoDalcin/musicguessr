@@ -57,19 +57,6 @@ interface TrackObject {
   uri: string;
 }
 
-export interface TriviaQuestion {
-  id: string;
-  song: string;
-  artist: string;
-  preview: string;
-  guessType: 'artist' | 'song';
-  rightAnswerId: string;
-  options: {
-    id: string;
-    name: string;
-  }[];
-}
-
 export interface Playlist {
   collaborative: boolean;
   description: string;
@@ -127,4 +114,18 @@ export interface Playlist {
       track: TrackObject;
     }[];
   };
+}
+
+export interface TriviaQuestion {
+  id: string;
+  index: number;
+  song: string;
+  artist: string;
+  preview: string;
+  guessType: "artist" | "song";
+  rightAnswerId: string;
+  options: {
+    id: string;
+    name: string;
+  }[];
 }

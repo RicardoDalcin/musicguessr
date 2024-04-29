@@ -1,25 +1,43 @@
-import express from 'express';
-import next from 'next';
-import http from 'http';
-import { Server, Socket } from 'socket.io';
-import { Player, Playlist, TriviaQuestion } from '@/types';
+import express from "express";
+import next from "next";
+import http from "http";
+import { Server, Socket } from "socket.io";
+import { Player, Playlist, TriviaQuestion } from "@/types";
 
-const dev = process.env.NODE_ENV !== 'production';
+const START_GAME_TIME = 5000;
+const QUESTION_INTRO_TIME = 3000;
+const QUESTION_TIME = 10000;
+const QUESTION_RESULT_TIME = 5000;
+
+let timeout: NodeJS.Timeout | null = null;
+let interval: NodeJS.Timeout | null = null;
+
+const dev = process.env.NODE_ENV !== "production";
 const app = next({ dev });
 const handle = app.getRequestHandler();
 
-const players = new Map<string, Player[]>();
-
-const playlist: {
+interface Lobby {
+  players: Player[];
   url: string;
-  data: Playlist | null;
+  playlist: Playlist | null;
   trivia: TriviaQuestion[];
-} = { url: '', data: null, trivia: [] };
+  guesses: Map<string, { questionId: string; answerId: string }[]>;
+  currentQuestion: number;
+}
 
-const guesses = new Map<string, { questionId: string; answerId: string }[]>();
+const getDefaultLobby = (): Lobby => ({
+  players: [],
+  url: "",
+  playlist: null,
+  trivia: [],
+  guesses: new Map(),
+  currentQuestion: 1,
+});
+
+const lobbies = new Map<string, Lobby>();
 
 function generateName() {
-  return 'Player ' + Math.floor(Math.random() * 1000);
+  return "Player " + Math.floor(Math.random() * 1000);
 }
 
 function getSongs(playlist: Playlist): TriviaQuestion[] {
@@ -31,7 +49,7 @@ function getSongs(playlist: Playlist): TriviaQuestion[] {
     .slice(0, 10);
 
   // for each song, create object with guess type (artist or song) and options
-  return songs.map((song) => {
+  return songs.map((song, index) => {
     const isArtist = Math.random() > 0.5;
     const options = songs
       .map((s) => (isArtist ? s.artists[0].name : s.name))
@@ -44,10 +62,11 @@ function getSongs(playlist: Playlist): TriviaQuestion[] {
 
     return {
       id: questionId,
+      index: index + 1,
       song: song.name,
       artist: song.artists[0].name,
-      preview: song.preview_url ?? '',
-      guessType: isArtist ? 'artist' : ('song' as 'artist' | 'song'),
+      preview: song.preview_url ?? "",
+      guessType: isArtist ? "artist" : ("song" as "artist" | "song"),
       rightAnswerId,
       options: [
         ...options.map((option) => ({
@@ -68,46 +87,46 @@ app.prepare().then(async () => {
   const httpServer = http.createServer(server);
   const io = new Server(httpServer);
 
-  io.on('connection', (socket) => {
-    const lobbyId = (socket.handshake.query.lobbyId ?? '') as string;
-    console.log('Client connected');
+  io.on("connection", (socket) => {
+    const lobbyId = (socket.handshake.query.lobbyId ?? "") as string;
+    console.log("Client connected");
 
-    socket.join(lobbyId ?? '');
+    socket.join(lobbyId ?? "");
 
-    const currentPlayers = players.get(lobbyId) ?? [];
+    const lobby = lobbies.get(lobbyId) ?? getDefaultLobby();
+    lobbies.set(lobbyId, lobby);
 
     const newPlayer: Player = {
       id: socket.id,
       name: generateName(),
-      isHost: currentPlayers.length === 0,
+      isHost: lobby.players.length === 0,
     };
 
-    const newList = [...currentPlayers, newPlayer];
+    const newList = [...lobby.players, newPlayer];
 
     // Inform the new player about the other players
-    socket.emit('playerList', newList);
+    socket.emit("playerList", newList);
 
     // Inform other players that a new player has joined
-    socket.broadcast.to(lobbyId ?? '').emit('newPlayer', newPlayer);
+    socket.broadcast.to(lobbyId ?? "").emit("newPlayer", newPlayer);
 
-    players.set(lobbyId, newList);
+    lobby.players = newList;
 
-    if (playlist.data) {
-      socket.emit('playlist', {
-        playlist: playlist.data,
-        trivia: playlist.trivia,
+    if (lobby.playlist) {
+      socket.emit("playlist", {
+        playlist: lobby.playlist,
+        trivia: lobby.trivia,
       });
     }
 
-    if (guesses.size) {
-      socket.emit('guesses', Array.from(guesses.entries()));
+    if (lobby.guesses.size) {
+      socket.emit("guesses", Array.from(lobby.guesses.entries()));
     }
 
-    socket.on('disconnect', () => {
-      console.log('Client disconnected');
+    socket.on("disconnect", () => {
+      console.log("Client disconnected");
 
-      const currentPlayers = players.get(lobbyId) ?? [];
-      const disconnectedPlayer = currentPlayers.find(
+      const disconnectedPlayer = lobby.players.find(
         (player) => player.id === socket.id
       );
 
@@ -115,46 +134,97 @@ app.prepare().then(async () => {
         return;
       }
 
-      const newList = currentPlayers
+      const newList = lobby.players
         .filter((player) => player.id !== disconnectedPlayer?.id)
         .map<Player>((player, index) => ({
           ...player,
           isHost: player.isHost || (disconnectedPlayer.isHost && index === 0),
         }));
 
-      players.set(lobbyId, newList);
-      guesses.delete(socket.id);
+      lobby.players = newList;
+      lobby.guesses.delete(socket.id);
 
-      socket.broadcast.to(lobbyId ?? '').emit('playerList', newList);
+      if (newList.length === 0) {
+        timeout && clearTimeout(timeout);
+        interval && clearInterval(interval);
+        return;
+      }
+
+      socket.broadcast.to(lobbyId ?? "").emit("playerList", newList);
     });
 
-    socket.on('setPlaylist', async (playlistId: string) => {
+    socket.on("setPlaylist", async (playlistId: string) => {
+      const lobby = lobbies.get(lobbyId);
+      if (!lobby) {
+        return;
+      }
+
       const response = await fetch(
         `http://localhost:3000/api/spotify/playlists/${playlistId}`
       );
 
       const data = await response.json();
-      playlist.data = data.data;
-      playlist.url = playlistId;
-      playlist.trivia = getSongs(data.data);
-      io.to(lobbyId).emit('playlist', {
+      lobby.playlist = data.data;
+      lobby.url = playlistId;
+      lobby.trivia = getSongs(data.data);
+      io.to(lobbyId).emit("playlist", {
         playlist: data.data,
-        trivia: playlist.trivia,
+        trivia: lobby.trivia,
       });
     });
 
-    socket.on('guess', (data: { questionId: string; answerId: string }) => {
-      console.log('RECEIVED GUESS');
+    socket.on("startGame", () => {
+      io.to(lobbyId).emit("startGame");
+      lobby.guesses.clear();
 
-      guesses.set(socket.id, [
-        ...(guesses.get(socket.id) ?? []),
+      const TOTAL_QUESTION_TIME =
+        QUESTION_INTRO_TIME + QUESTION_TIME + QUESTION_RESULT_TIME;
+
+      function question() {
+        io.to(lobbyId).emit("questionIntro", lobby.currentQuestion);
+
+        timeout = setTimeout(() => {
+          const question = lobby.trivia[lobby.currentQuestion - 1];
+          io.to(lobbyId).emit("question", question);
+
+          timeout = setTimeout(() => {
+            io.to(lobbyId).emit("questionResult");
+
+            timeout = setTimeout(() => {
+              const nextQuestion = lobby.currentQuestion + 1;
+              lobby.currentQuestion = nextQuestion;
+              if (nextQuestion < 3) {
+                io.to(lobbyId).emit("questionIntro", nextQuestion);
+              } else {
+                io.to(lobbyId).emit("gameOver");
+                interval && clearInterval(interval);
+              }
+            }, QUESTION_RESULT_TIME);
+          }, QUESTION_TIME);
+        }, QUESTION_INTRO_TIME);
+      }
+
+      setTimeout(() => {
+        question();
+
+        interval = setInterval(() => {
+          question();
+        }, TOTAL_QUESTION_TIME);
+      }, START_GAME_TIME);
+    });
+
+    socket.on("guess", (data: { questionId: string; answerId: string }) => {
+      console.log("RECEIVED GUESS");
+
+      lobby.guesses.set(socket.id, [
+        ...(lobby.guesses.get(socket.id) ?? []),
         {
           questionId: data.questionId,
           answerId: data.answerId,
         },
       ]);
 
-      socket.broadcast.to(lobbyId).emit('guess', {
+      socket.broadcast.to(lobbyId).emit("guess", {
         questionId: data.questionId,
         answerId: data.answerId,
         playerId: socket.id,
@@ -162,7 +232,7 @@ app.prepare().then(async () => {
     });
   });
 
-  server.all('*', (req, res) => {
+  server.all("*", (req, res) => {
     return handle(req, res);
   });
 
