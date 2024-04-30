@@ -82,6 +82,20 @@ function getSongs(playlist: Playlist): TriviaQuestion[] {
   });
 }
 
+function getQuestionResult(
+  question: TriviaQuestion,
+  guesses: Map<string, { questionId: string; answerId: string }[]>
+) {
+  const questionGuesses = Array.from(guesses.entries()).flatMap(
+    ([playerId, playerGuesses]) =>
+      playerGuesses
+        .filter((g) => g.questionId === question.id)
+        .map((g) => ({ playerId, answerId: g.answerId }))
+  );
+
+  return questionGuesses;
+}
+
 app.prepare().then(async () => {
   const server = express();
   const httpServer = http.createServer(server);
@@ -147,6 +161,8 @@ app.prepare().then(async () => {
       if (newList.length === 0) {
         timeout && clearTimeout(timeout);
         interval && clearInterval(interval);
+        lobby.currentQuestion = 1;
+        lobby.guesses.clear();
         return;
       }
 
@@ -185,10 +201,16 @@ app.prepare().then(async () => {
 
         timeout = setTimeout(() => {
           const question = lobby.trivia[lobby.currentQuestion - 1];
-          io.to(lobbyId).emit("question", question);
+          io.to(lobbyId).emit("question", { ...question } as Omit<
+            TriviaQuestion,
+            "rightAnswerId"
+          >);
 
           timeout = setTimeout(() => {
-            io.to(lobbyId).emit("questionResult");
+            io.to(lobbyId).emit("questionResult", {
+              question,
+              guesses: getQuestionResult(question, lobby.guesses),
+            });
 
             timeout = setTimeout(() => {
               const nextQuestion = lobby.currentQuestion + 1;
@@ -214,8 +236,6 @@ app.prepare().then(async () => {
     });
 
     socket.on("guess", (data: { questionId: string; answerId: string }) => {
-      console.log("RECEIVED GUESS");
-
       lobby.guesses.set(socket.id, [
         ...(lobby.guesses.get(socket.id) ?? []),
         {
@@ -226,7 +246,6 @@ app.prepare().then(async () => {
 
       socket.broadcast.to(lobbyId).emit("guess", {
         questionId: data.questionId,
-        answerId: data.answerId,
         playerId: socket.id,
       });
     });

@@ -17,11 +17,20 @@ let connected = false;
 
 let socket: Socket | null = null;
 
+type ClientTriviaQuestion = Omit<TriviaQuestion, "rightAnswerId">;
+
+interface QuestionResult {
+  question: TriviaQuestion;
+  guesses: { playerId: string; answerId: string }[];
+}
+
 export default function Lobby({ params }: { params: { id: string } }) {
-  const [playlistUrl, setPlaylistUrl] = useState<string>("");
+  const [playlistUrl, setPlaylistUrl] = useState<string>(
+    "https://open.spotify.com/playlist/4TRhJ30Nq7x9AfoTyFruig?si=a2f544afb9d84807"
+  );
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
   const [questionNumber, setQuestionNumber] = useState<number>(0);
-  const [question, setQuestion] = useState<TriviaQuestion | null>(null);
+  const [question, setQuestion] = useState<ClientTriviaQuestion | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
   const [guesses, setGuesses] = useState<
     Map<string, { questionId: string; answerId: string }[]>
@@ -31,6 +40,7 @@ export default function Lobby({ params }: { params: { id: string } }) {
   const [countdownTotal, setCountdownTotal] = useState<number>(0);
 
   const [gameState, setGameState] = useState<GameState>("lobby");
+  const [result, setResult] = useState<QuestionResult | null>(null);
 
   const me = useMemo(
     () => players.find((player) => player.id === socket?.id),
@@ -145,14 +155,16 @@ export default function Lobby({ params }: { params: { id: string } }) {
       startCountdown(3);
     });
 
-    socket.on("question", (question: TriviaQuestion) => {
+    socket.on("question", (question: ClientTriviaQuestion) => {
+      console.log("question", question);
       setQuestion(question);
       setGameState("question");
       startCountdown(10);
     });
 
-    socket.on("questionResult", () => {
+    socket.on("questionResult", (result: QuestionResult) => {
       setGameState("questionResult");
+      setResult(result);
       startCountdown(5);
     });
 
@@ -250,7 +262,7 @@ export default function Lobby({ params }: { params: { id: string } }) {
                 value={playlistUrl}
                 onChange={(e) => setPlaylistUrl(e.target.value)}
                 placeholder="Playlist URL"
-                className="flex h-10 w-full rounded-l-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                className="flex h-10 w-full rounded-l-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 text-black"
               />
 
               <button
