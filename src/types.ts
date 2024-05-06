@@ -122,10 +122,12 @@ export interface TriviaQuestion {
   song: string;
   artist: string;
   preview: string;
-  guessType: "artist" | "song";
+  guessType: 'artist' | 'song';
   rightAnswerId: string;
   options: {
     id: string;
     name: string;
   }[];
 }
+
+export type ClientTriviaQuestion = Omit<TriviaQuestion, 'rightAnswerId'>;
