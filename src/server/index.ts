@@ -1,13 +1,14 @@
-import express from 'express';
-import next from 'next';
-import http from 'http';
-import { Server, Socket } from 'socket.io';
+import express from "express";
+import next from "next";
+import http from "http";
+import { Server, Socket } from "socket.io";
 import {
   ClientTriviaQuestion,
   Player,
   Playlist,
   TriviaQuestion,
-} from '@/types';
+  PlayerGuess,
+} from "@/types";
 
 const START_GAME_TIME = 5000;
 const QUESTION_INTRO_TIME = 3000;
@@ -17,7 +18,7 @@ const QUESTION_RESULT_TIME = 5000;
 let timeout: NodeJS.Timeout | null = null;
 let interval: NodeJS.Timeout | null = null;
 
-const dev = process.env.NODE_ENV !== 'production';
+const dev = process.env.NODE_ENV !== "production";
 const app = next({ dev });
 const handle = app.getRequestHandler();
 
@@ -26,13 +27,13 @@ interface Lobby {
   url: string;
   playlist: Playlist | null;
   trivia: TriviaQuestion[];
-  guesses: Map<string, { questionId: string; answerId: string }[]>;
+  guesses: Map<string, PlayerGuess[]>;
   currentQuestion: number;
 }
 
 const getDefaultLobby = (): Lobby => ({
   players: [],
-  url: '',
+  url: "",
   playlist: null,
   trivia: [],
   guesses: new Map(),
@@ -42,7 +43,7 @@ const getDefaultLobby = (): Lobby => ({
 const lobbies = new Map<string, Lobby>();
 
 function generateName() {
-  return 'Player ' + Math.floor(Math.random() * 1000);
+  return "Player " + Math.floor(Math.random() * 1000);
 }
 
 function getSongs(playlist: Playlist): TriviaQuestion[] {
@@ -70,8 +71,8 @@ function getSongs(playlist: Playlist): TriviaQuestion[] {
       index: index + 1,
       song: song.name,
       artist: song.artists[0].name,
-      preview: song.preview_url ?? '',
-      guessType: isArtist ? 'artist' : ('song' as 'artist' | 'song'),
+      preview: song.preview_url ?? "",
+      guessType: isArtist ? "artist" : ("song" as "artist" | "song"),
       rightAnswerId,
       options: [
         ...options.map((option) => ({
@@ -83,19 +84,24 @@ function getSongs(playlist: Playlist): TriviaQuestion[] {
           name: isArtist ? song.artists[0].name : song.name,
         },
       ].sort(() => Math.random() - 0.5),
+      startTime: 0,
     };
   });
 }
 
 function getQuestionResult(
   question: TriviaQuestion,
-  guesses: Map<string, { questionId: string; answerId: string }[]>
+  guesses: Map<string, PlayerGuess[]>
 ) {
   const questionGuesses = Array.from(guesses.entries()).flatMap(
     ([playerId, playerGuesses]) =>
       playerGuesses
         .filter((g) => g.questionId === question.id)
-        .map((g) => ({ playerId, answerId: g.answerId }))
+        .map((g) => ({
+          playerId,
+          answerId: g.answerId,
+          time: g.time - question.startTime,
+        }))
   );
 
   return questionGuesses;
@@ -106,11 +112,11 @@ app.prepare().then(async () => {
   const httpServer = http.createServer(server);
   const io = new Server(httpServer);
 
-  io.on('connection', (socket) => {
-    const lobbyId = (socket.handshake.query.lobbyId ?? '') as string;
-    console.log('Client connected');
+  io.on("connection", (socket) => {
+    const lobbyId = (socket.handshake.query.lobbyId ?? "") as string;
+    console.log("Client connected");
 
-    socket.join(lobbyId ?? '');
+    socket.join(lobbyId ?? "");
 
     const lobby = lobbies.get(lobbyId) ?? getDefaultLobby();
     lobbies.set(lobbyId, lobby);
@@ -124,26 +130,26 @@ app.prepare().then(async () => {
     const newList = [...lobby.players, newPlayer];
 
     // Inform the new player about the other players
-    socket.emit('playerList', newList);
+    socket.emit("playerList", newList);
 
     // Inform other players that a new player has joined
-    socket.broadcast.to(lobbyId ?? '').emit('newPlayer', newPlayer);
+    socket.broadcast.to(lobbyId ?? "").emit("newPlayer", newPlayer);
 
     lobby.players = newList;
 
     if (lobby.playlist) {
-      socket.emit('playlist', {
+      socket.emit("playlist", {
         playlist: lobby.playlist,
         trivia: lobby.trivia,
       });
     }
 
     if (lobby.guesses.size) {
-      socket.emit('guesses', Array.from(lobby.guesses.entries()));
+      socket.emit("guesses", Array.from(lobby.guesses.entries()));
     }
 
-    socket.on('disconnect', () => {
-      console.log('Client disconnected');
+    socket.on("disconnect", () => {
+      console.log("Client disconnected");
 
       const disconnectedPlayer = lobby.players.find(
         (player) => player.id === socket.id
@@ -171,10 +177,10 @@ app.prepare().then(async () => {
         return;
       }
 
-      socket.broadcast.to(lobbyId ?? '').emit('playerList', newList);
+      socket.broadcast.to(lobbyId ?? "").emit("playerList", newList);
     });
 
-    socket.on('setPlaylist', async (playlistId: string) => {
+    socket.on("setPlaylist", async (playlistId: string) => {
       const lobby = lobbies.get(lobbyId);
       if (!lobby) {
         return;
@@ -188,51 +194,50 @@ app.prepare().then(async () => {
       lobby.playlist = data.data;
       lobby.url = playlistId;
       lobby.trivia = getSongs(data.data);
-      io.to(lobbyId).emit('playlist', {
+      io.to(lobbyId).emit("playlist", {
         playlist: data.data,
         trivia: lobby.trivia,
       });
     });
 
-    socket.on('startGame', () => {
-      io.to(lobbyId).emit('startGame');
-      lobby.guesses.clear();
+    const TOTAL_QUESTION_TIME =
+      QUESTION_INTRO_TIME + QUESTION_TIME + QUESTION_RESULT_TIME;
 
-      const TOTAL_QUESTION_TIME =
-        QUESTION_INTRO_TIME + QUESTION_TIME + QUESTION_RESULT_TIME;
+    function question() {
+      io.to(lobbyId).emit("questionIntro", lobby.currentQuestion);
 
-      function question() {
-        io.to(lobbyId).emit('questionIntro', lobby.currentQuestion);
+      timeout = setTimeout(() => {
+        const question = lobby.trivia[lobby.currentQuestion - 1];
+        const clientQuestion = { ...question } as Partial<TriviaQuestion>;
+        delete clientQuestion.rightAnswerId;
+        delete clientQuestion.startTime;
+
+        io.to(lobbyId).emit("question", clientQuestion as ClientTriviaQuestion);
+        question.startTime = Date.now();
 
         timeout = setTimeout(() => {
-          const question = lobby.trivia[lobby.currentQuestion - 1];
-          const clientQuestion = { ...question } as Partial<TriviaQuestion>;
-          delete clientQuestion.rightAnswerId;
-
-          io.to(lobbyId).emit(
-            'question',
-            clientQuestion as ClientTriviaQuestion
-          );
+          io.to(lobbyId).emit("questionResult", {
+            question,
+            guesses: getQuestionResult(question, lobby.guesses),
+          });
 
           timeout = setTimeout(() => {
-            io.to(lobbyId).emit('questionResult', {
-              question,
-              guesses: getQuestionResult(question, lobby.guesses),
-            });
+            const nextQuestion = lobby.currentQuestion + 1;
+            lobby.currentQuestion = nextQuestion;
+            if (nextQuestion < lobby.trivia.length) {
+              io.to(lobbyId).emit("questionIntro", nextQuestion);
+            } else {
+              io.to(lobbyId).emit("gameOver");
+              interval && clearInterval(interval);
+            }
+          }, QUESTION_RESULT_TIME);
+        }, QUESTION_TIME);
+      }, QUESTION_INTRO_TIME);
+    }
 
-            timeout = setTimeout(() => {
-              const nextQuestion = lobby.currentQuestion + 1;
-              lobby.currentQuestion = nextQuestion;
-              if (nextQuestion < lobby.trivia.length) {
-                io.to(lobbyId).emit('questionIntro', nextQuestion);
-              } else {
-                io.to(lobbyId).emit('gameOver');
-                interval && clearInterval(interval);
-              }
-            }, QUESTION_RESULT_TIME);
-          }, QUESTION_TIME);
-        }, QUESTION_INTRO_TIME);
-      }
+    socket.on("startGame", () => {
+      io.to(lobbyId).emit("startGame");
+      lobby.guesses.clear();
 
       timeout = setTimeout(() => {
         question();
@@ -243,23 +248,64 @@ app.prepare().then(async () => {
       }, START_GAME_TIME);
     });
 
-    socket.on('guess', (data: { questionId: string; answerId: string }) => {
+    socket.on("guess", (data: { questionId: string; answerId: string }) => {
       lobby.guesses.set(socket.id, [
         ...(lobby.guesses.get(socket.id) ?? []),
         {
           questionId: data.questionId,
           answerId: data.answerId,
+          time: Date.now(),
         },
       ]);
 
-      socket.broadcast.to(lobbyId).emit('guess', {
+      socket.broadcast.to(lobbyId).emit("guess", {
         questionId: data.questionId,
         playerId: socket.id,
       });
+
+      const guessesOnQuestion = Array.from(lobby.guesses.values())
+        .flatMap((guesses) => guesses)
+        .filter((guess) => guess.questionId === data.questionId);
+
+      if (guessesOnQuestion.length === lobby.players.length) {
+        if (timeout) {
+          clearTimeout(timeout);
+        }
+
+        if (interval) {
+          clearInterval(interval);
+        }
+
+        const guessQuestion = lobby.trivia[lobby.currentQuestion - 1];
+        console.log(
+          guessQuestion,
+          getQuestionResult(guessQuestion, lobby.guesses)
+        );
+
+        io.to(lobbyId).emit("questionResult", {
+          question: guessQuestion,
+          guesses: getQuestionResult(guessQuestion, lobby.guesses),
+        });
+
+        timeout = setTimeout(() => {
+          const nextQuestion = lobby.currentQuestion + 1;
+          lobby.currentQuestion = nextQuestion;
+          if (nextQuestion < lobby.trivia.length) {
+            question();
+
+            interval = setInterval(() => {
+              question();
+            }, TOTAL_QUESTION_TIME);
+          } else {
+            io.to(lobbyId).emit("gameOver");
+            interval && clearInterval(interval);
+          }
+        }, QUESTION_RESULT_TIME);
+      }
     });
   });
 
-  server.all('*', (req, res) => {
+  server.all("*", (req, res) => {
     return handle(req, res);
   });
 

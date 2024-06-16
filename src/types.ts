@@ -4,6 +4,12 @@ export interface Player {
   isHost: boolean;
 }
 
+export interface PlayerGuess {
+  questionId: string;
+  answerId: string;
+  time: number;
+}
+
 export interface Album {
   album_type: string;
   images: {
@@ -122,12 +128,13 @@ export interface TriviaQuestion {
   song: string;
   artist: string;
   preview: string;
-  guessType: 'artist' | 'song';
+  guessType: "artist" | "song";
   rightAnswerId: string;
+  startTime: number;
   options: {
     id: string;
     name: string;
   }[];
 }
 
-export type ClientTriviaQuestion = Omit<TriviaQuestion, 'rightAnswerId'>;
+export type ClientTriviaQuestion = Omit<TriviaQuestion, "rightAnswerId">;

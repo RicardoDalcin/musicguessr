@@ -1,23 +1,22 @@
-'use client';
+"use client";
 
-import { Trivia } from '@/components/Trivia';
 import {
   ClientTriviaQuestion,
   Player,
   Playlist,
   TriviaQuestion,
-} from '@/types';
-import classNames from 'classnames';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Socket, io } from 'socket.io-client';
+} from "@/types";
+import classNames from "classnames";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Socket, io } from "socket.io-client";
 
 type GameState =
-  | 'lobby'
-  | 'startGame'
-  | 'questionIntro'
-  | 'question'
-  | 'questionResult'
-  | 'gameOver';
+  | "lobby"
+  | "startGame"
+  | "questionIntro"
+  | "question"
+  | "questionResult"
+  | "gameOver";
 
 let connected = false;
 
@@ -25,12 +24,12 @@ let socket: Socket | null = null;
 
 interface QuestionResult {
   question: TriviaQuestion;
-  guesses: { playerId: string; answerId: string }[];
+  guesses: { playerId: string; answerId: string; time: number }[];
 }
 
 export default function Lobby({ params }: { params: { id: string } }) {
   const [playlistUrl, setPlaylistUrl] = useState<string>(
-    'https://open.spotify.com/playlist/4TRhJ30Nq7x9AfoTyFruig?si=a2f544afb9d84807'
+    "https://open.spotify.com/playlist/4TRhJ30Nq7x9AfoTyFruig?si=a2f544afb9d84807"
   );
   const [playlist, setPlaylist] = useState<Playlist | null>(null);
   const [questionNumber, setQuestionNumber] = useState<number>(0);
@@ -47,7 +46,7 @@ export default function Lobby({ params }: { params: { id: string } }) {
   const [countdown, setCountdown] = useState<number>(0);
   const [countdownTotal, setCountdownTotal] = useState<number>(0);
 
-  const [gameState, setGameState] = useState<GameState>('lobby');
+  const [gameState, setGameState] = useState<GameState>("lobby");
   const [result, setResult] = useState<QuestionResult | null>(null);
 
   const [volume, setVolume] = useState(1);
@@ -102,17 +101,17 @@ export default function Lobby({ params }: { params: { id: string } }) {
       },
     });
 
-    socket.on('newPlayer', (data: Player) => {
-      console.log('player connected', data);
+    socket.on("newPlayer", (data: Player) => {
+      console.log("player connected", data);
       setPlayers((players) => [...players, data]);
     });
 
-    socket.on('playerList', (data: Player[]) => {
+    socket.on("playerList", (data: Player[]) => {
       setPlayers(data);
     });
 
     socket.on(
-      'playlist',
+      "playlist",
       ({
         playlist,
         trivia,
@@ -126,14 +125,14 @@ export default function Lobby({ params }: { params: { id: string } }) {
     );
 
     socket.on(
-      'guesses',
+      "guesses",
       (data: [string, { questionId: string; answerId: string }[]][]) => {
         setGuesses(new Map(data));
       }
     );
 
     socket.on(
-      'guess',
+      "guess",
       (data: { questionId: string; answerId: string; playerId: string }) => {
         setGuesses((guesses) => {
           const newGuesses = new Map(guesses);
@@ -155,21 +154,21 @@ export default function Lobby({ params }: { params: { id: string } }) {
       }
     );
 
-    socket.on('startGame', () => {
-      setGameState('startGame');
+    socket.on("startGame", () => {
+      setGameState("startGame");
       startCountdown(5);
     });
 
-    socket.on('questionIntro', (questionNumber: number) => {
+    socket.on("questionIntro", (questionNumber: number) => {
       setQuestionNumber(questionNumber);
-      setGameState('questionIntro');
+      setGameState("questionIntro");
       startCountdown(3);
     });
 
-    socket.on('question', (question: ClientTriviaQuestion) => {
-      console.log('question', question);
+    socket.on("question", (question: ClientTriviaQuestion) => {
+      console.log("question", question);
       setQuestion(question);
-      setGameState('question');
+      setGameState("question");
       startCountdown(10);
 
       setTimeout(() => {
@@ -182,14 +181,14 @@ export default function Lobby({ params }: { params: { id: string } }) {
       }, 50);
     });
 
-    socket.on('questionResult', (result: QuestionResult) => {
-      setGameState('questionResult');
+    socket.on("questionResult", (result: QuestionResult) => {
+      setGameState("questionResult");
       setResult(result);
       startCountdown(5);
     });
 
-    socket.on('gameOver', () => {
-      setGameState('gameOver');
+    socket.on("gameOver", () => {
+      setGameState("gameOver");
     });
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -204,11 +203,11 @@ export default function Lobby({ params }: { params: { id: string } }) {
     // setError(null);
 
     const isSpotifyUrl = new RegExp(
-      '^(https://open.spotify.com(/intl-.+)?/playlist/).+'
+      "^(https://open.spotify.com(/intl-.+)?/playlist/).+"
     ).test(playlistUrl);
 
     const playlistId =
-      playlistUrl.split('playlist/').pop()?.split('?')[0] ?? '';
+      playlistUrl.split("playlist/").pop()?.split("?")[0] ?? "";
 
     if (!isSpotifyUrl || !playlistId) {
       // setError(
@@ -218,7 +217,7 @@ export default function Lobby({ params }: { params: { id: string } }) {
       return;
     }
 
-    socket.emit('setPlaylist', playlistId);
+    socket.emit("setPlaylist", playlistId);
   }
 
   function startGame() {
@@ -226,7 +225,7 @@ export default function Lobby({ params }: { params: { id: string } }) {
       return;
     }
 
-    socket.emit('startGame');
+    socket.emit("startGame");
   }
 
   const onGuess = useCallback((questionId: string, answerId: string) => {
@@ -263,7 +262,7 @@ export default function Lobby({ params }: { params: { id: string } }) {
       return newGuesses;
     });
 
-    socket.emit('guess', { questionId, answerId });
+    socket.emit("guess", { questionId, answerId });
   }, []);
 
   const hasGuessed = useCallback(
@@ -282,34 +281,35 @@ export default function Lobby({ params }: { params: { id: string } }) {
 
   function devQuestion() {
     setQuestion({
-      id: '15lqvv',
+      id: "15lqvv",
       index: 1,
-      song: 'Wake Me Up',
-      artist: 'Foals',
+      song: "Wake Me Up",
+      artist: "Foals",
       preview:
-        'https://p.scdn.co/mp3-preview/c7836a4b712714b254825b6c48ea0371ff01bb00?cid=4e3d49ba29d744f3993b66302dc21db4',
-      guessType: 'song',
+        "https://p.scdn.co/mp3-preview/c7836a4b712714b254825b6c48ea0371ff01bb00?cid=4e3d49ba29d744f3993b66302dc21db4",
+      guessType: "song",
       options: [
         {
-          id: 'v042b',
-          name: 'Pumped Up Kicks',
+          id: "v042b",
+          name: "Pumped Up Kicks",
         },
         {
-          id: '30kt4e',
-          name: 'Extra Life',
+          id: "30kt4e",
+          name: "Extra Life",
         },
         {
-          id: '4kSCNra5VuD1ZfiwAe8bTD',
-          name: 'Wake Me Up',
+          id: "4kSCNra5VuD1ZfiwAe8bTD",
+          name: "Wake Me Up",
         },
         {
-          id: 'jl5ej3',
-          name: 'Stop Selling Her Drugs (feat. Dominic Fike)',
+          id: "jl5ej3",
+          name: "Stop Selling Her Drugs (feat. Dominic Fike)",
         },
       ],
+      startTime: Date.now(),
     });
 
-    setGameState('question');
+    setGameState("question");
 
     setTimeout(() => {
       if (!questionPlayer.current) {
@@ -323,7 +323,7 @@ export default function Lobby({ params }: { params: { id: string } }) {
 
   return (
     <main className="flex flex-col items-center justify-between gap-8 px-8 py-24 md:p-24 min-h-screen bg-[#0f1132] text-indigo-50">
-      {process.env.NODE_ENV === 'development' && (
+      {process.env.NODE_ENV === "development" && (
         <div className="absolute top-8 right-8 bg-white/20 p-4 rounded-xl flex flex-col gap-2 w-[280px]">
           <p>Dev menu</p>
 
@@ -380,7 +380,7 @@ export default function Lobby({ params }: { params: { id: string } }) {
         )}
 
         <div className="flex flex-col gap-1">
-          <div>Players: {players.map((player) => player.name).join(', ')}</div>
+          <div>Players: {players.map((player) => player.name).join(", ")}</div>
           {me && me.isHost && <button onClick={startGame}>Start game</button>}
         </div>
 
@@ -391,9 +391,9 @@ export default function Lobby({ params }: { params: { id: string } }) {
           ></div>
         </div>
 
-        {gameState === 'startGame' && <p>Are you ready?</p>}
-        {gameState === 'questionIntro' && <p>Question {questionNumber}</p>}
-        {gameState === 'question' && question && (
+        {gameState === "startGame" && <p>Are you ready?</p>}
+        {gameState === "questionIntro" && <p>Question {questionNumber}</p>}
+        {gameState === "question" && question && (
           <div className="flex flex-col">
             <p>Guess the artist/song</p>
 
@@ -413,7 +413,7 @@ export default function Lobby({ params }: { params: { id: string } }) {
                     key={i}
                     onClick={() => onGuess(question.id, option.id)}
                     className={classNames(
-                      'w-[400px] py-6 rounded-lg relative bg-white/10 hover:bg-white/20 disabled:bg-white/5'
+                      "w-[400px] py-6 rounded-lg relative bg-white/10 hover:bg-white/20 disabled:bg-white/5"
                     )}
                     disabled={hasGuessed(question.id)}
                   >
@@ -429,9 +429,21 @@ export default function Lobby({ params }: { params: { id: string } }) {
             </div>
           </div>
         )}
-        {gameState === 'questionResult' && (
+        {gameState === "questionResult" && (
           <div className="flex flex-col gap-2">
             <p>Question results</p>
+
+            {result &&
+              result.guesses.map((guess) => (
+                <div
+                  key={guess.playerId}
+                  className="flex items-center gap-2 relative"
+                >
+                  <p>{guess.playerId}</p>
+                  <p>{guess.answerId}</p>
+                  <p>{guess.time}</p>
+                </div>
+              ))}
 
             {result &&
               result.question.options.map((option) => {
@@ -445,7 +457,7 @@ export default function Lobby({ params }: { params: { id: string } }) {
                   <div
                     key={option.id}
                     className={`flex items-center gap-2 relative ${
-                      isRightAnswer ? 'text-green-500' : 'text-red-500'
+                      isRightAnswer ? "text-green-500" : "text-red-500"
                     }`}
                   >
                     {isMyAnswer && (
